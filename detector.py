@@ -11,12 +11,14 @@ class PersonDetector:
         # YOLO 클래스 인덱스 중 'person'은 대개 0번입니다.
         self.person_class_id = 0
 
-    def detect_people(self, frame, conf_threshold=0.2, iou_threshold=0.5):
+    def detect_people(self, frame, conf_threshold=0.1, iou_threshold=0.6):
         """
         프레임에서 사람을 탐지하고 결과를 반환합니다.
+        감도를 높이기 위해 기본 신뢰도(conf)를 낮추고, 
+        사람이 겹쳐있을 때 각각의 박스를 유지하도록 IOU를 높였습니다.
         :param frame: OpenCV 프레임 (numpy array)
-        :param conf_threshold: 신뢰도 임계값
-        :param iou_threshold: 중복 제거 임계값
+        :param conf_threshold: 신뢰도 임계값 (0.1로 낮추어 형체만 있어도 인식)
+        :param iou_threshold: 중복 제거 임계값 (0.6으로 높여 겹친 사람 분리)
         :return: 탐지된 인원수, 결과 프레임, 바운딩 박스 리스트
         """
         # classes=[0]을 추가하여 오직 '사람'만 탐지하도록 제한 (속도 및 정확도 향상)
@@ -29,8 +31,20 @@ class PersonDetector:
         res = results[0]
         count = len(res.boxes)
         
-        # 사람만 탐지하도록 설정했으므로 res.plot()은 이제 사람만 그립니다.
-        annotated_frame = res.plot() 
+        # 가독성을 높이기 위한 커스텀 그리기 로직 (선 두께와 폰트 크기 조정)
+        annotated_frame = frame.copy()
+        for box in res.boxes:
+            # 좌표 추출
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            
+            # 박스 그리기 (선 두께 1로 축소하여 겹침 확인 용이하게 함)
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 1)
+            
+            # 레이블 표시 (신뢰도 포함, 폰트 크기 축소)
+            label = f"{conf:.2f}"
+            cv2.putText(annotated_frame, label, (x1, y1 - 5), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
         
         return count, annotated_frame, res.boxes
 
