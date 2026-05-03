@@ -15,30 +15,24 @@ class PersonDetector:
         """
         프레임에서 사람을 탐지하고 결과를 반환합니다.
         :param frame: OpenCV 프레임 (numpy array)
-        :param conf_threshold: 신뢰도 임계값 (낮을수록 민감하게 탐지)
-        :param iou_threshold: 중복 제거 임계값 (낮을수록 겹친 물체를 엄격하게 분리)
-        :return: 탐지된 인원수, 결과 프레임(박스 그려진 프레임), 바운딩 박스 리스트
+        :param conf_threshold: 신뢰도 임계값
+        :param iou_threshold: 중복 제거 임계값
+        :return: 탐지된 인원수, 결과 프레임, 바운딩 박스 리스트
         """
-        # 감도를 높이기 위해 conf와 iou 값을 조정하여 예측 실행
-        results = self.model(frame, conf=conf_threshold, iou=iou_threshold, verbose=False)
+        # classes=[0]을 추가하여 오직 '사람'만 탐지하도록 제한 (속도 및 정확도 향상)
+        results = self.model(frame, 
+                             conf=conf_threshold, 
+                             iou=iou_threshold, 
+                             classes=[0], 
+                             verbose=False)
         
-        # 첫 번째 결과 객체 가져오기
         res = results[0]
+        count = len(res.boxes)
         
-        # 사람(class 0)만 필터링
-        person_boxes = []
-        for box in res.boxes:
-            if int(box.cls[0]) == self.person_class_id:
-                person_boxes.append(box)
-        
-        count = len(person_boxes)
-        
-        # 시각화 (원본 프레임에 박스 그리기)
-        # res.plot()은 모든 탐지 대상을 그리므로, 사람만 선별적으로 그릴 수도 있습니다.
-        # 여기서는 편의상 탐지된 모든 박스를 그린 프레임을 반환하거나 직접 그립니다.
+        # 사람만 탐지하도록 설정했으므로 res.plot()은 이제 사람만 그립니다.
         annotated_frame = res.plot() 
         
-        return count, annotated_frame, person_boxes
+        return count, annotated_frame, res.boxes
 
 if __name__ == "__main__":
     # 웹캠 등으로 간단 테스트 (카메라가 연결되어 있어야 함)
