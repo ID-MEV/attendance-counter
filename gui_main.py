@@ -58,7 +58,13 @@ class AttendanceGUI(QMainWindow):
 
     def analyze_image(self):
         if self.current_frame is not None:
-            count, annotated_frame, _ = self.detector.detect_people(self.current_frame)
+            # conf_threshold를 0.15로 낮추어 아주 작은 형태도 잡도록 설정
+            # iou_threshold를 0.5로 설정하여 겹쳐 있는 사람들을 분리
+            count, annotated_frame, _ = self.detector.detect_people(
+                self.current_frame, 
+                conf_threshold=0.15, 
+                iou_threshold=0.5
+            )
             self.display_image(annotated_frame)
             self.result_label.setText(f"탐지 결과: {count} 명 발견!")
 
