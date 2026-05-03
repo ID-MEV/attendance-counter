@@ -23,11 +23,11 @@ def analyze_single_image(image_path, use_tiling=True):
     h, w = original_frame.shape[:2]
     all_boxes = []
 
-    # 4. 분석 실행 (전체 화면 + 세밀한 타일링)
-    print(f"분석 시작 (Tiling: {use_tiling}): {image_path}")
-    
-    # 기본 전체 화면 탐지 (임계값 0.1로 복구)
-    _, _, boxes = detector.detect_people(original_frame, conf_threshold=0.1, iou_threshold=0.6)
+    # 4. 분석 실행 (전체 화면 + 세밀한 고해상도 타일링)
+    print(f"분석 시작 (Tiling: {use_tiling}, imgsz=1280): {image_path}")
+
+    # 기본 전체 화면 탐지 (해상도 1280 적용)
+    _, _, boxes = detector.detect_people(original_frame, conf_threshold=0.1, iou_threshold=0.6, imgsz=1280)
     for box in boxes:
         all_boxes.append({
             'xyxy': box.xyxy[0].cpu().numpy(),
@@ -35,27 +35,24 @@ def analyze_single_image(image_path, use_tiling=True):
         })
 
     if use_tiling:
-        print("세밀한 타일링 분석 중 (3x3 Grid)...")
-        # 3x3 타일로 더 잘게 나누어 분석 (오버랩 25%로 상향)
+        print("세밀한 고해상도 타일링 분석 중 (3x3 Grid)...")
         rows, cols = 3, 3
         overlap = 0.25
         tile_h, tile_w = int(h / rows), int(w / cols)
-        
+
         for i in range(rows):
             for j in range(cols):
-                # 각 타일의 시작/끝 좌표 계산 (오버랩 포함)
                 y_start = max(0, int(i * tile_h - (tile_h * overlap if i > 0 else 0)))
                 y_end = min(h, int((i + 1) * tile_h + (tile_h * overlap if i < rows - 1 else 0)))
                 x_start = max(0, int(j * tile_w - (tile_w * overlap if j > 0 else 0)))
                 x_end = min(w, int((j + 1) * tile_w + (tile_w * overlap if j < cols - 1 else 0)))
-                
+
                 tile = original_frame[y_start:y_end, x_start:x_end]
-                # 타일 분석도 임계값 0.1 적용
-                _, _, t_boxes = detector.detect_people(tile, conf_threshold=0.1, iou_threshold=0.6)
-                
+                # 타일 분석 (imgsz=1280 적용)
+                _, _, t_boxes = detector.detect_people(tile, conf_threshold=0.1, iou_threshold=0.6, imgsz=1280)
+
                 for tb in t_boxes:
                     coords = tb.xyxy[0].cpu().numpy()
-                    # 전체 좌표계로 변환
                     global_coords = [
                         coords[0] + x_start,
                         coords[1] + y_start,
@@ -66,29 +63,27 @@ def analyze_single_image(image_path, use_tiling=True):
                         'xyxy': global_coords,
                         'conf': float(tb.conf[0])
                     })
-
-    # 5. 박스 통합 및 중복 제거 (Advanced NMS)
+    # 5. 박스 통합 및 중복 제거 (정밀 조정된 NMS)
     final_boxes = []
     if all_boxes:
-        # 신뢰도 순으로 정렬 (높은 신뢰도 박스 우선)
+        # 신뢰도 순으로 정렬
         sorted_boxes = sorted(all_boxes, key=lambda x: x['conf'], reverse=True)
-        
+
         while sorted_boxes:
             best = sorted_boxes.pop(0)
             final_boxes.append(best)
-            
+
             remaining = []
             for item in sorted_boxes:
                 iou = calculate_iou(best['xyxy'], item['xyxy'])
                 iom = calculate_iom(best['xyxy'], item['xyxy'])
-                
-                # 1. IOU가 0.4 이상이거나 (겹침이 많음)
-                # 2. IoM이 0.7 이상인 경우 (한 박스가 다른 박스에 70% 이상 포함됨)
-                # 중복으로 간주하여 제외
-                if iou < 0.4 and iom < 0.7:
+
+                # 밀집 구역에서 사람이 지워지지 않도록 임계값 소폭 완화
+                # 1. IOU 0.45 이상 (기존 0.4)
+                # 2. IoM 0.75 이상 (기존 0.7)
+                if iou < 0.45 and iom < 0.75:
                     remaining.append(item)
             sorted_boxes = remaining
-
     # 6. 결과 그리기
     annotated_frame = original_frame.copy()
     for box in final_boxes:

@@ -11,21 +11,17 @@ class PersonDetector:
         # YOLO 클래스 인덱스 중 'person'은 대개 0번입니다.
         self.person_class_id = 0
 
-    def detect_people(self, frame, conf_threshold=0.1, iou_threshold=0.6):
+    def detect_people(self, frame, conf_threshold=0.1, iou_threshold=0.6, imgsz=640):
         """
         프레임에서 사람을 탐지하고 결과를 반환합니다.
-        감도를 높이기 위해 기본 신뢰도(conf)를 낮추고, 
-        사람이 겹쳐있을 때 각각의 박스를 유지하도록 IOU를 높였습니다.
-        :param frame: OpenCV 프레임 (numpy array)
-        :param conf_threshold: 신뢰도 임계값 (0.1로 낮추어 형체만 있어도 인식)
-        :param iou_threshold: 중복 제거 임계값 (0.6으로 높여 겹친 사람 분리)
-        :return: 탐지된 인원수, 결과 프레임, 바운딩 박스 리스트
+        :param imgsz: 분석 해상도 (640, 1280 등)
         """
-        # classes=[0]을 추가하여 오직 '사람'만 탐지하도록 제한 (속도 및 정확도 향상)
+        # classes=[0]을 추가하여 오직 '사람'만 탐지하도록 제한
         results = self.model(frame, 
                              conf=conf_threshold, 
                              iou=iou_threshold, 
                              classes=[0], 
+                             imgsz=imgsz,
                              verbose=False)
         
         res = results[0]
