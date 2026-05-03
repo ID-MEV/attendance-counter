@@ -2,9 +2,9 @@ import cv2
 from ultralytics import YOLO
 
 class PersonDetector:
-    def __init__(self, model_path='yolov8n.pt'):
+    def __init__(self, model_path='yolov8l.pt'):
         """
-        YOLO 모델을 로드합니다. (기본값은 가벼운 yolov8n 모델)
+        YOLO 모델을 로드합니다. (최고의 정밀도를 위해 Large 모델을 사용)
         """
         print(f"모델 로드 중: {model_path}...")
         self.model = YOLO(model_path)
