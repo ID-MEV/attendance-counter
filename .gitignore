@@ -9,4 +9,5 @@ dist/
 *.spec
 *.pt
 *.log
+# captures/  <- 주석 처리하여 포함되도록 설정
 .DS_Store
