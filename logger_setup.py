@@ -12,12 +12,13 @@ def setup_logger():
     # 파일 출력 설정
     file_handler = logging.FileHandler('app.log', encoding='utf-8')
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO) # DEBUG에서 INFO로 변경
 
     # 콘솔 출력 설정
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
+    console_handler.encoding = 'utf-8'
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
