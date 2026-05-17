@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from camera_controller import CameraController
+from detector import PersonDetector # PersonDetector 임포트
 from logger_setup import logger
 
 class LiveVideoThread(QThread):
@@ -104,6 +105,7 @@ class LiveControlGUI(QMainWindow):
         super().__init__()
         # self.camera = CameraController("192.168.0.90", "admin", "admin") # CameraController 초기화 일시 비활성화
         self.camera = None # 초기화 전까지 None으로 설정
+        self.detector = PersonDetector() # PersonDetector 인스턴스화
         self.rtsp_url = "rtsp://mev.o-r.kr:20003/stream1"
         self.latest_frame = None
         self.init_ui()
@@ -223,14 +225,31 @@ class LiveControlGUI(QMainWindow):
         continuous_move_group.setLayout(continuous_layout)
         right_layout.addWidget(continuous_move_group)
 
+        # 새로운 버튼 추가
+        self.analyze_button = QPushButton("사람수 세기 분석")
+        self.analyze_button.setStyleSheet("background-color: #2ecc71; color: white;")
+        self.analyze_button.clicked.connect(self.analyze_current_frame_for_people) # 버튼 연결
+        right_layout.addWidget(self.analyze_button)
+        
+        self.person_count_label = QLabel("인원수: 0명") # 인원수 표시 라벨
+        self.person_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.person_count_label.setStyleSheet("font-size: 18px; color: #f1c40f; font-weight: bold; margin-top: 10px;")
+        right_layout.addWidget(self.person_count_label)
+        
+        self.key_status_label = QLabel("키 입력: 없음") # 키 입력 상태 표시 라벨
+        self.key_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.key_status_label.setStyleSheet("background-color: #7f8c8d; color: white; font-weight: bold; padding: 5px; border-radius: 3px; margin-top: 5px;")
+        right_layout.addWidget(self.key_status_label)
+
         # 2. 작업 로그 섹션
         log_group = QGroupBox("작업 로그")
         log_layout = QVBoxLayout()
         self.log_display = QPlainTextEdit()
         self.log_display.setReadOnly(True)
+        self.log_display.setFixedHeight(70) # 3줄 정도 높이로 제한
         log_layout.addWidget(self.log_display)
         log_group.setLayout(log_layout)
-        right_layout.addWidget(log_group, 1) # 로그 창이 남은 공간을 차지하도록
+        right_layout.addWidget(log_group) # 높이를 제한했으므로 stretch는 제거
 
         main_layout.addLayout(right_layout, 3)
 
@@ -300,6 +319,39 @@ class LiveControlGUI(QMainWindow):
         cv2.imwrite(file_path, self.latest_frame)
         self.add_log(f"[캡처 성공] {file_name} 저장 완료")
 
+    def analyze_current_frame_for_people(self):
+        self.add_log("현재 화면 사람 수 분석 시작...")
+        if self.latest_frame is None:
+            self.add_log("[오류] 분석할 프레임이 없습니다. 스트림이 연결되어 있는지 확인하세요.")
+            self.person_count_label.setText("인원수: 오류")
+            return
+        
+        try:
+            # 사람 감지 실행
+            # GUI의 video_label에 표시되는 이미지는 원본 프레임이 아닐 수 있으므로,
+            # raw_frame_signal을 통해 받은 self.latest_frame을 사용해야 함.
+            count, annotated_frame, _ = self.detector.detect_people(self.latest_frame)
+            
+            self.person_count_label.setText(f"인원수: {count}명")
+            self.add_log(f"[분석 완료] 현재 화면에서 {count}명 발견")
+            
+            # 탐지 결과를 시각화하여 video_label에 일시적으로 표시 (선택 사항)
+            # GUI의 video_label 크기에 맞게 annotated_frame을 스케일링하여 표시
+            h, w, ch = annotated_frame.shape
+            bytes_per_line = ch * w
+            qt_image = QImage(annotated_frame.data, w, h, bytes_per_line, QImage.Format.Format_BGR888) # BGR888로 변경
+            pixmap = QPixmap.fromImage(qt_image)
+            p = pixmap.scaled(self.video_label.width(), self.video_label.height(), Qt.AspectRatioMode.KeepAspectRatio)
+            self.video_label.setPixmap(p) # 이미지 표시
+
+            # 일정 시간 후 원본 스트림으로 되돌리기 (선택 사항, 복잡도 증가)
+            # 여기서는 분석된 프레임을 즉시 표시하고, 다음 스트림 프레임이 오면 덮어쓰도록 합니다.
+
+        except Exception as e:
+            logger.error(f"사람 수 분석 중 오류 발생: {str(e)}", exc_info=True)
+            self.add_log(f"[오류] 사람 수 분석 실패: {str(e)}")
+            self.person_count_label.setText("인원수: 오류")
+
     def move_to_preset(self):
         if not self._ensure_camera_initialized():
             return
@@ -346,6 +398,52 @@ class LiveControlGUI(QMainWindow):
             logger.info(f"UI Log: {encoded_text}")
         except Exception as e:
             logger.error(f"Error logging UI message: {e} - Original text: {text}")
+
+    def keyPressEvent(self, event):
+        if event.isAutoRepeat():
+            return
+        
+        key = event.key()
+        key_text = event.text().lower()
+        self.key_status_label.setText(f"키 입력: {key_text.upper()}")
+        
+        # 숫자 입력 (프리셋 번호 설정)
+        if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
+            self.preset_input.setText(str(key - Qt.Key.Key_0))
+            self.add_log(f"프리셋 번호 입력: {key - Qt.Key.Key_0}")
+            return # 숫자 키는 여기서 처리 완료
+
+        if key == Qt.Key.Key_Space:
+            self.add_log("스페이스바 누름: 프리셋 이동 시도")
+            self.move_to_preset()
+        elif key_text == 'w':
+            self.start_continuous_move("up", 10, 10)
+        elif key_text == 's':
+            self.start_continuous_move("down", 10, 10)
+        elif key_text == 'a':
+            self.start_continuous_move("left", 10, 10)
+        elif key_text == 'd':
+            self.start_continuous_move("right", 10, 10)
+        elif key_text == 'q':
+            self.start_continuous_move("zoomin", 5, 5)
+        elif key_text == 'e':
+            self.start_continuous_move("zoomout", 5, 5)
+        else:
+            super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.isAutoRepeat():
+            return
+
+        key_text = event.text().lower()
+        self.key_status_label.setText("키 입력: 없음") # 키 떼면 상태 초기화
+        
+        if key_text in ['w', 's', 'a', 'd']:
+            self.stop_continuous_move("move")
+        elif key_text in ['q', 'e']:
+            self.stop_continuous_move("zoom")
+        else:
+            super().keyReleaseEvent(event)
 
     def closeEvent(self, event):
         self.video_thread.stop()
