@@ -4,12 +4,16 @@ from requests.exceptions import RequestException, ConnectionError, Timeout
 from logger_setup import logger # 로거 임포트
 
 class CameraController:
-    def __init__(self, ip, user, password):
+    def __init__(self, ip, user, password, port=None):
         self.ip = ip
+        self.port = port
         self.user = user
         self.password = password
-        self.base_url = f"http://{self.ip}/cgi-bin/ptzctrl.cgi"
-        logger.info(f"CameraController 초기화: IP={ip}, 사용자={user}")
+        if self.port:
+            self.base_url = f"http://{self.ip}:{self.port}/cgi-bin/ptzctrl.cgi"
+        else:
+            self.base_url = f"http://{self.ip}/cgi-bin/ptzctrl.cgi"
+        logger.info(f"CameraController 초기화: IP={ip}, Port={port}, 사용자={user}")
 
     def _send_command(self, url, command_name):
         try:
