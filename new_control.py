@@ -170,7 +170,7 @@ class HelpModal(QDialog):
         ("Q / E",                "줌 인 / 줌 아웃"),
         ("Z",                    "팬틸트 속도 조정 모드 토글"),
         ("X",                    "줌 속도 조정 모드 토글"),
-        ("+  /  −",              "속도 증가 / 감소  (Z 또는 X 모드 활성 시)"),
+        ("+  /  −",              "속도 증가 / 감소  (Z: 1~30 팬틸트 / X: 1~15 줌)"),
         ("숫자  +  Space",       "프리셋 번호 입력 후 이동"),
         ("ESC",                  "프리셋 입력 버퍼 초기화"),
         ("Backspace",            "계산기 수식 한 글자 삭제"),
@@ -296,9 +296,9 @@ class NewControlGUI(QMainWindow):
         self.video_thread = None
         self.show_overlay = True  # 오버레이(십자/9분할) 표시 여부 (기본: ON)
         
-        # 속도 설정 상태
-        self.pan_tilt_speed = 10  # 팬틸트 속도 (1~24)
-        self.zoom_speed = 3       # 줌 속도 (1~7)
+        # 속도 설정 상태 (실험용: 웹 7 / 컨트롤러 10 이상 가능성 확인)
+        self.pan_tilt_speed = 10  # 팬틸트 속도 (1~30, 실험 한도 30)
+        self.zoom_speed = 3       # 줌 속도 (1~15, 실험 한도 15)
         self.speed_mode = None    # None | 'pan_tilt' | 'zoom'
         
         self.init_ui()
@@ -428,9 +428,9 @@ class NewControlGUI(QMainWindow):
         # 속도 조정 모드 배지 (활성화 시에만 표시)
         speed_badge = ""
         if self.speed_mode == 'pan_tilt':
-            speed_badge = f" &nbsp; <span style='background-color: rgba(155, 89, 182, 0.25); color: #c39bd3; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🎚️ 팬틸트 속도: {self.pan_tilt_speed} / 24 &nbsp; (+/- 조절, Z로 종료)</span>"
+            speed_badge = f" &nbsp; <span style='background-color: rgba(155, 89, 182, 0.25); color: #c39bd3; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🎚️ 팬틸트 속도: {self.pan_tilt_speed} / 30 &nbsp; (+/- 조절, Z로 종료)</span>"
         elif self.speed_mode == 'zoom':
-            speed_badge = f" &nbsp; <span style='background-color: rgba(52, 152, 219, 0.25); color: #7fb3d3; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🔍 줌 속도: {self.zoom_speed} / 7 &nbsp; (+/- 조절, X로 종료)</span>"
+            speed_badge = f" &nbsp; <span style='background-color: rgba(52, 152, 219, 0.25); color: #7fb3d3; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🔍 줌 속도: {self.zoom_speed} / 15 &nbsp; (+/- 조절, X로 종료)</span>"
 
         # 오버레이 꺼짐 배지 (OFF 상태일 때만 표시)
         overlay_badge = ""
@@ -560,7 +560,7 @@ class NewControlGUI(QMainWindow):
         # 속도 조정 모드가 활성화된 경우 +/- 처리
         if self.speed_mode == 'pan_tilt':
             if text in ['+', '=']:
-                self.pan_tilt_speed = min(24, self.pan_tilt_speed + 1)
+                self.pan_tilt_speed = min(30, self.pan_tilt_speed + 1)
                 self.update_status_display()
                 return
             elif text == '-':
@@ -569,7 +569,7 @@ class NewControlGUI(QMainWindow):
                 return
         elif self.speed_mode == 'zoom':
             if text in ['+', '=']:
-                self.zoom_speed = min(7, self.zoom_speed + 1)
+                self.zoom_speed = min(15, self.zoom_speed + 1)
                 self.update_status_display()
                 return
             elif text == '-':
