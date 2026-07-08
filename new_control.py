@@ -2,7 +2,7 @@ import sys
 import cv2
 import threading
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFrame
-from PyQt6.QtGui import QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor
+from PyQt6.QtGui import QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor, QIcon
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from camera_controller import CameraController
 
@@ -306,6 +306,7 @@ class NewControlGUI(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("성림 라이브 제어기 (안정화 버전)")
+        self.setWindowIcon(QIcon("icon.ico"))
         self.setGeometry(150, 150, 960, 620)
         self.setStyleSheet("background-color: #121418;")
         

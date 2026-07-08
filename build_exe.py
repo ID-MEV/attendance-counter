@@ -10,28 +10,29 @@ def build():
             print(f"Cleaning up {d}...")
             shutil.rmtree(d)
 
-    print("Building Executable...")
+    print("Building Executable for new_control.py...")
     
     # PyInstaller 설정
     PyInstaller.__main__.run([
-        'gui_main.py',              # 메인 스크립트
-        '--name=AttendanceCounter',  # 폴더/EXE 이름
-        '--onedir',                  # 단일 파일 대신 폴더 구조 선택 (속도 향상 핵심)
+        'new_control.py',            # 메인 스크립트
+        '--name=NewControl',         # 폴더/EXE 이름
+        '--onefile',                 # 단일 파일(EXE) 생성
         '--windowed',                # 콘솔 창 띄우지 않음
         '--noconfirm',               # 확인 절차 생략
         '--clean',                   # 캐시 삭제 후 빌드
-        # YOLO 모델 파일 포함
-        '--add-data=yolov8n.pt;.',   
+        '--icon=icon.ico',           # 애플리케이션 아이콘
         # 추가 패키지 힌트
-        '--collect-all=ultralytics',
         '--collect-all=cv2',
         # 불필요하게 무거운 라이브러리 제외 (용량 및 속도 최적화)
+        '--exclude-module=ultralytics',
+        '--exclude-module=torch',
+        '--exclude-module=torchvision',
         '--exclude-module=matplotlib',
         '--exclude-module=tensorboard',
         '--exclude-module=mkl',
     ])
 
-    print("\nBuild Complete! Check the 'dist' folder.")
+    print("\nBuild Complete! Check the 'dist' folder for NewControl.exe.")
 
 if __name__ == "__main__":
     build()
