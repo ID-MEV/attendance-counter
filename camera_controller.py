@@ -31,16 +31,16 @@ class CameraController:
                 return False, f"HTTP 오류 {response.status_code}"
                 
         except ConnectionError as e:
-            logger.error(f"[네트워크 오류] {command_name} - 연결 실패: {e}", exc_info=True)
+            logger.debug(f"[네트워크 오류] {command_name} - 연결 실패 (ConnectionRefused): {e}")
             return False, f"네트워크 연결 오류: {e}"
         except Timeout as e:
-            logger.error(f"[네트워크 오류] {command_name} - 요청 시간 초과: {e}", exc_info=True)
+            logger.debug(f"[네트워크 오류] {command_name} - 요청 시간 초과: {e}")
             return False, f"요청 시간 초과 오류: {e}"
         except RequestException as e:
-            logger.error(f"[요청 오류] {command_name} - 요청 중 예외 발생: {e}", exc_info=True)
+            logger.debug(f"[요청 오류] {command_name} - 요청 중 예외 발생: {e}")
             return False, f"요청 예외 발생: {e}"
         except Exception as e:
-            logger.error(f"[알 수 없는 오류] {command_name} - 예측하지 못한 예외 발생: {e}", exc_info=True)
+            logger.debug(f"[알 수 없는 오류] {command_name} - 예외 발생: {e}")
             return False, f"알 수 없는 오류: {e}"
 
     def move_to_preset(self, preset_no):
