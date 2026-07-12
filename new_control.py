@@ -438,8 +438,15 @@ class NewControlGUI(QMainWindow):
         self.update_status_display()
 
     def update_image(self, img):
+        self._last_img = img
         pix = QPixmap.fromImage(img).scaled(self.video_label.width(), self.video_label.height(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.video_label.setPixmap(pix)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_last_img') and self._last_img is not None:
+            pix = QPixmap.fromImage(self._last_img).scaled(self.video_label.width(), self.video_label.height(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.video_label.setPixmap(pix)
 
     def update_status_msg(self, msg):
         self.update_status_display(extra=msg)
@@ -893,10 +900,15 @@ class NewControlGUI(QMainWindow):
         if pixmap is None or pixmap.isNull():
             self.update_status_display(extra="스크린샷 실패: 영상 없음")
             return
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        screenshot_dir = os.path.join(base_dir, "screenshots")
+        os.makedirs(screenshot_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"screenshot_cam{self.current_camera_id}_{timestamp}.png"
-        filepath = os.path.join(base_dir, filename)
+        filepath = os.path.join(screenshot_dir, filename)
         if pixmap.save(filepath, "PNG"):
             self.update_status_display(extra=f"스크린샷 저장 완료: {filename}")
         else:

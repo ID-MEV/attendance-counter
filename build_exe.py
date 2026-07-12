@@ -20,7 +20,7 @@ def build():
         '--windowed',                # 콘솔 창 띄우지 않음
         '--noconfirm',               # 확인 절차 생략
         '--clean',                   # 캐시 삭제 후 빌드
-        '--icon=icon.ico',           # 애플리케이션 아이콘
+        '--icon=icon/favicon.ico',    # 애플리케이션 아이콘
         # 추가 패키지 힌트
         '--collect-all=cv2',
         # 불필요하게 무거운 라이브러리 제외 (용량 및 속도 최적화)
