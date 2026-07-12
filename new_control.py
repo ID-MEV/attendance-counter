@@ -1,4 +1,6 @@
 import sys
+import os
+import datetime
 import cv2
 import threading
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFrame, QPushButton
@@ -196,6 +198,7 @@ class HelpModal(QDialog):
         ("텐키  숫자 / 연산자",  "계산기 수식 입력"),
         ("텐키  Enter",          "계산기 수식 계산"),
         ("H",                    "십자 / 9분할 오버레이 토글  (기본: ON)"),
+        ("C",                    "현재 프레임 스크린샷 저장"),
         ("Shift  +  ?",          "이 단축키 안내창 열기"),
     ]
 
@@ -739,6 +742,11 @@ class NewControlGUI(QMainWindow):
             self.update_status_display()
             return
 
+        # C: 현재 프레임 스크린샷 저장
+        if key == Qt.Key.Key_C or text == 'ㅊ':
+            self.save_screenshot()
+            return
+
         # 속도 조정 모드가 활성화된 경우 +/- 처리
         if self.speed_mode == 'pan_tilt':
             if text in ['+', '=']:
@@ -879,6 +887,20 @@ class NewControlGUI(QMainWindow):
             self.calc_result = ""
             
         self.update_status_display()
+
+    def save_screenshot(self):
+        pixmap = self.video_label.pixmap()
+        if pixmap is None or pixmap.isNull():
+            self.update_status_display(extra="스크린샷 실패: 영상 없음")
+            return
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"screenshot_cam{self.current_camera_id}_{timestamp}.png"
+        filepath = os.path.join(base_dir, filename)
+        if pixmap.save(filepath, "PNG"):
+            self.update_status_display(extra=f"스크린샷 저장 완료: {filename}")
+        else:
+            self.update_status_display(extra="스크린샷 저장 실패")
 
     def keyReleaseEvent(self, event: QKeyEvent):
         if event.isAutoRepeat(): return
