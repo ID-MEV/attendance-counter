@@ -10,5 +10,13 @@ dist/
 !NewControl.spec
 *.pt
 *.log
-# captures/  <- 주석 처리하여 포함되도록 설정
+captures/
+stream_snapshot.jpg
+attendance_log.csv
+kakao_notifier.py
+capture_test.py
+main_test.py
+rtsp_test.py
+single_image_test.py
+test_run.py
 .DS_Store
