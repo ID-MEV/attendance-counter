@@ -1,9 +1,7 @@
 import sys
-import os
 import cv2
-import time
 import threading
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFrame
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFrame, QPushButton
 from PyQt6.QtGui import QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor, QIcon
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from camera_controller import CameraController
@@ -15,21 +13,21 @@ CAMERA_CONFIGS = {
         "srt_main": "srt://mev.o-r.kr:20001",
         "rtsp_main": "rtsp://mev.o-r.kr:20001/stream1",
         "ctrl_ip": "mev.o-r.kr",
-        "ctrl_port": 20001
+        "ctrl_port": 20004
     },
     2: {
         "name": "예배당 중앙 (2번)",
         "srt_main": "srt://mev.o-r.kr:20002",
         "rtsp_main": "rtsp://mev.o-r.kr:20002/stream1",
         "ctrl_ip": "mev.o-r.kr",
-        "ctrl_port": 20002
+        "ctrl_port": 20005
     },
     3: {
         "name": "예배당 우측 (3번)",
         "srt_main": "srt://mev.o-r.kr:20003",
         "rtsp_main": "rtsp://mev.o-r.kr:20003/stream1",
         "ctrl_ip": "mev.o-r.kr",
-        "ctrl_port": 20003
+        "ctrl_port": 20006
     }
 }
 
@@ -49,52 +47,21 @@ class VideoThread(QThread):
         self._cap = None
         self.is_connected = False
         self.active_protocol = "None"
-        self._latest_frame = None
-        self._lock = threading.Lock()
 
     def run(self):
-        # OpenCV FFmpeg 초저지연 연결 옵션 적용
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|analyzeduration;100000|probesize;100000|fflags;nobuffer|flags;low_delay"
-
-        # 백그라운드에서 최신 프레임을 지속적으로 읽어 버퍼를 즉시 비우는 스레드
-        def frame_grabber():
-            while self._run_flag:
-                if not self.is_connected:
-                    time.sleep(0.01)
-                    continue
-                
-                if self._cap is not None:
-                    ret, frame = self._cap.read()
-                    if ret and frame is not None:
-                        with self._lock:
-                            self._latest_frame = frame
-                    else:
-                        with self._lock:
-                            self._latest_frame = None
-                        self.is_connected = False
-                else:
-                    time.sleep(0.01)
-
-        # 그래버 스레드 시작
-        grabber_thread = threading.Thread(target=frame_grabber, daemon=True)
-        grabber_thread.start()
-
         while self._run_flag:
             if not self.is_connected:
                 # 1. SRT 연결 시도
                 self.status_signal.emit("SRT 연결 중...")
                 self._cap = cv2.VideoCapture(self.srt_url, cv2.CAP_FFMPEG)
                 if self._cap.isOpened():
-                    self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     ret, frame = self._cap.read()
                     if ret and frame is not None:
-                        with self._lock:
-                            self._latest_frame = frame
                         self.is_connected = True
                         self.active_protocol = "SRT"
                         self.status_signal.emit("SRT 연결 완료")
                         self.emit_frame(frame)
-                
+
                 # 2. SRT 실패 시 RTSP 폴백
                 if not self.is_connected:
                     if self._cap:
@@ -102,11 +69,8 @@ class VideoThread(QThread):
                     self.status_signal.emit("RTSP 연결 중...")
                     self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
                     if self._cap.isOpened():
-                        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                         ret, frame = self._cap.read()
                         if ret and frame is not None:
-                            with self._lock:
-                                self._latest_frame = frame
                             self.is_connected = True
                             self.active_protocol = "RTSP"
                             self.status_signal.emit("RTSP 연결 완료")
@@ -120,28 +84,34 @@ class VideoThread(QThread):
                     self.msleep(3000)
                     continue
 
-            # 영상 캡처 루프: 그래버가 채워둔 최신 프레임을 획득하여 GUI로 전송
-            frame = None
-            with self._lock:
-                if self._latest_frame is not None:
-                    frame = self._latest_frame.copy()
-                    self._latest_frame = None  # 중복 전송 방지
-
-            if frame is not None:
-                self.emit_frame(frame)
-                self.msleep(30)  # 약 33fps 제한으로 메인 GUI 스레드 과부하 방지
-            else:
-                if not self.is_connected:
+            # 영상 캡처 루프: cap.read() 즉시 emit (원본 구조 복원)
+            try:
+                ret, frame = self._cap.read()
+                if ret and frame is not None:
+                    self.emit_frame(frame)
+                else:
+                    self.is_connected = False
                     if self._cap:
                         self._cap.release()
                         self._cap = None
                     self.status_signal.emit("스트림 끊김 (재연결 시도)")
                     self.msleep(1000)
-                else:
-                    self.msleep(5)
+            except Exception:
+                self.is_connected = False
+                if self._cap:
+                    try:
+                        self._cap.release()
+                    except Exception:
+                        pass
+                    self._cap = None
+                self.status_signal.emit("스트림 오류 (재연결 시도)")
+                self.msleep(1000)
 
         if self._cap:
-            self._cap.release()
+            try:
+                self._cap.release()
+            except Exception:
+                pass
 
     def emit_frame(self, frame):
         try:
@@ -155,7 +125,8 @@ class VideoThread(QThread):
 
     def stop(self):
         self._run_flag = False
-        self.wait()
+        self.quit()
+        self.wait(100)
 
 
 class OverlayVideoLabel(QLabel):
@@ -343,6 +314,7 @@ class NewControlGUI(QMainWindow):
         self.calc_result = ""
         self.video_thread = None
         self.show_overlay = True  # 오버레이(십자/9분할) 표시 여부 (기본: ON)
+        self.network_mode = "external"  # 접속 모드: "external" (기본값) 또는 "internal"
         
         # 속도 설정 상태
         self.pan_tilt_speed = 10  # 팬틸트 속도 (1~24)
@@ -402,16 +374,44 @@ class NewControlGUI(QMainWindow):
         self.video_label.setMinimumSize(800, 480)
         layout.addWidget(self.video_label)
 
+        # 하단 조작 영역 (네트워크 토글 버튼 + 단축키 힌트)
+        bottom_layout = QHBoxLayout()
+        
+        self.network_toggle_btn = QPushButton("🌐 접속 모드: 외부 인터넷")
+        self.network_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.network_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a1d24;
+                color: #3498db;
+                border: 1px solid #232d3f;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-weight: bold;
+                font-size: 11px;
+                font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #2c3240;
+                border-color: #3498db;
+                color: #5dade2;
+            }
+        """)
+        self.network_toggle_btn.clicked.connect(self.toggle_network_mode)
+        bottom_layout.addWidget(self.network_toggle_btn)
+        
+        bottom_layout.addStretch()
+
         # 하단 힌트 텍스트 (단축키 안내 트리거 안내)
         hint_label = QLabel("💡  <b>Shift + ?</b> 를 누르면 단축키 안내창이 열립니다")
-        hint_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        hint_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         hint_label.setTextFormat(Qt.TextFormat.RichText)
         hint_label.setStyleSheet(
             "color: #3d4f61; font-size: 11px;"
             "font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;"
             "background: transparent; padding: 2px 4px;"
         )
-        layout.addWidget(hint_label)
+        bottom_layout.addWidget(hint_label)
+        layout.addLayout(bottom_layout)
 
         # 키보드 이벤트의 즉각 수신을 위해 본체 윈도우 포커스 고정
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -504,6 +504,12 @@ class NewControlGUI(QMainWindow):
         cam_badge = f"<span style='background-color: #2b3545; color: #ffffff; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🎥 {config['name']}</span>"
         status_badge = f"<span style='background-color: {bg_color}; color: {text_color}; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>{status_text}</span>"
         
+        # 네트워크 접속 모드 배지
+        if self.network_mode == "internal":
+            net_badge = f"<span style='background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🌐 내부망 ({config['ctrl_ip']})</span>"
+        else:
+            net_badge = f"<span style='background-color: rgba(52, 152, 219, 0.15); color: #3498db; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🌐 외부망 ({config['ctrl_ip']}:{config['ctrl_port']})</span>"
+        
         # 입력 프리셋 상태
         if self.preset_buffer:
             preset_badge = f"<span style='background-color: rgba(52, 152, 219, 0.2); color: #3498db; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>입력 중: {self.preset_buffer}</span>"
@@ -526,7 +532,7 @@ class NewControlGUI(QMainWindow):
             overlay_badge = " &nbsp; <span style='background-color: rgba(80, 80, 80, 0.2); color: #666; border-radius: 4px; padding: 3px 8px; font-weight: bold;'>🔲 오버레이 OFF</span>"
 
         # 가로 나열
-        self.status_label.setText(f"{cam_badge} &nbsp; {status_badge} &nbsp; {preset_badge} &nbsp; {last_badge}{speed_badge}{overlay_badge}")
+        self.status_label.setText(f"{cam_badge} &nbsp; {net_badge} &nbsp; {status_badge} &nbsp; {preset_badge} &nbsp; {last_badge}{speed_badge}{overlay_badge}")
         
         # 2. 우측 계산기 패널 업데이트 (수식과 결과를 다르게 스타일링)
         if self.calc_buffer:
@@ -569,6 +575,94 @@ class NewControlGUI(QMainWindow):
     def _bg_stop_move(self, cmd):
         if self.camera:
             self.camera.stop_movement(cmd)
+
+    def toggle_network_mode(self):
+        if self.network_mode == "external":
+            self.network_mode = "internal"
+            # CAMERA_CONFIGS 내부 값을 내부망용 IP로 수정
+            CAMERA_CONFIGS[1]["srt_main"] = "srt://192.168.0.91"
+            CAMERA_CONFIGS[1]["rtsp_main"] = "rtsp://192.168.0.91:554/stream1"
+            CAMERA_CONFIGS[1]["srt_sub"] = "srt://192.168.0.91"
+            CAMERA_CONFIGS[1]["rtsp_sub"] = "rtsp://192.168.0.91:554/stream2"
+            CAMERA_CONFIGS[1]["ctrl_ip"] = "192.168.0.91"
+            CAMERA_CONFIGS[1]["ctrl_port"] = 80
+
+            CAMERA_CONFIGS[2]["srt_main"] = "srt://192.168.0.92"
+            CAMERA_CONFIGS[2]["rtsp_main"] = "rtsp://192.168.0.92:554/stream1"
+            CAMERA_CONFIGS[2]["srt_sub"] = "srt://192.168.0.92"
+            CAMERA_CONFIGS[2]["rtsp_sub"] = "rtsp://192.168.0.92:554/stream2"
+            CAMERA_CONFIGS[2]["ctrl_ip"] = "192.168.0.92"
+            CAMERA_CONFIGS[2]["ctrl_port"] = 80
+
+            CAMERA_CONFIGS[3]["srt_main"] = "srt://192.168.0.90"
+            CAMERA_CONFIGS[3]["rtsp_main"] = "rtsp://192.168.0.90:554/stream1"
+            CAMERA_CONFIGS[3]["srt_sub"] = "srt://192.168.0.90"
+            CAMERA_CONFIGS[3]["rtsp_sub"] = "rtsp://192.168.0.90:554/stream2"
+            CAMERA_CONFIGS[3]["ctrl_ip"] = "192.168.0.90"
+            CAMERA_CONFIGS[3]["ctrl_port"] = 80
+
+            self.network_toggle_btn.setText("🌐 접속 모드: 내부망 (LAN)")
+            self.network_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #27ae60;
+                    color: white;
+                    border: 1px solid #2ecc71;
+                    border-radius: 6px;
+                    padding: 5px 12px;
+                    font-weight: bold;
+                    font-size: 11px;
+                    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+                }
+                QPushButton:hover {
+                    background-color: #2ecc71;
+                    border-color: #2ecc71;
+                }
+            """)
+        else:
+            self.network_mode = "external"
+            # CAMERA_CONFIGS 내부 값을 외부 도메인용으로 복원
+            CAMERA_CONFIGS[1]["srt_main"] = "srt://mev.o-r.kr:20001"
+            CAMERA_CONFIGS[1]["rtsp_main"] = "rtsp://mev.o-r.kr:20001/stream1"
+            CAMERA_CONFIGS[1]["srt_sub"] = "srt://mev.o-r.kr:20001"
+            CAMERA_CONFIGS[1]["rtsp_sub"] = "rtsp://mev.o-r.kr:20001/stream2"
+            CAMERA_CONFIGS[1]["ctrl_ip"] = "mev.o-r.kr"
+            CAMERA_CONFIGS[1]["ctrl_port"] = 20004
+
+            CAMERA_CONFIGS[2]["srt_main"] = "srt://mev.o-r.kr:20002"
+            CAMERA_CONFIGS[2]["rtsp_main"] = "rtsp://mev.o-r.kr:20002/stream1"
+            CAMERA_CONFIGS[2]["srt_sub"] = "srt://mev.o-r.kr:20002"
+            CAMERA_CONFIGS[2]["rtsp_sub"] = "rtsp://mev.o-r.kr:20002/stream2"
+            CAMERA_CONFIGS[2]["ctrl_ip"] = "mev.o-r.kr"
+            CAMERA_CONFIGS[2]["ctrl_port"] = 20005
+
+            CAMERA_CONFIGS[3]["srt_main"] = "srt://mev.o-r.kr:20003"
+            CAMERA_CONFIGS[3]["rtsp_main"] = "rtsp://mev.o-r.kr:20003/stream1"
+            CAMERA_CONFIGS[3]["srt_sub"] = "srt://mev.o-r.kr:20003"
+            CAMERA_CONFIGS[3]["rtsp_sub"] = "rtsp://mev.o-r.kr:20003/stream2"
+            CAMERA_CONFIGS[3]["ctrl_ip"] = "mev.o-r.kr"
+            CAMERA_CONFIGS[3]["ctrl_port"] = 20006
+
+            self.network_toggle_btn.setText("🌐 접속 모드: 외부 인터넷")
+            self.network_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1a1d24;
+                    color: #3498db;
+                    border: 1px solid #232d3f;
+                    border-radius: 6px;
+                    padding: 5px 12px;
+                    font-weight: bold;
+                    font-size: 11px;
+                    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+                }
+                QPushButton:hover {
+                    background-color: #2c3240;
+                    border-color: #3498db;
+                    color: #5dade2;
+                }
+            """)
+
+        # 스트림 및 제어 재시작
+        self.start_stream(self.current_camera_id)
 
     def move_to_preset(self):
         if not self.preset_buffer:
