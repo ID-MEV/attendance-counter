@@ -1,5 +1,7 @@
 import sys
+import os
 import cv2
+import time
 import threading
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFrame
 from PyQt6.QtGui import QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor, QIcon
@@ -12,22 +14,22 @@ CAMERA_CONFIGS = {
         "name": "예배당 좌측 (1번)",
         "srt_main": "srt://mev.o-r.kr:20001",
         "rtsp_main": "rtsp://mev.o-r.kr:20001/stream1",
-        "ctrl_ip": "192.168.0.88",
-        "ctrl_port": 80
+        "ctrl_ip": "mev.o-r.kr",
+        "ctrl_port": 20001
     },
     2: {
         "name": "예배당 중앙 (2번)",
         "srt_main": "srt://mev.o-r.kr:20002",
         "rtsp_main": "rtsp://mev.o-r.kr:20002/stream1",
-        "ctrl_ip": "192.168.0.89",
-        "ctrl_port": 80
+        "ctrl_ip": "mev.o-r.kr",
+        "ctrl_port": 20002
     },
     3: {
         "name": "예배당 우측 (3번)",
         "srt_main": "srt://mev.o-r.kr:20003",
         "rtsp_main": "rtsp://mev.o-r.kr:20003/stream1",
-        "ctrl_ip": "192.168.0.90",
-        "ctrl_port": 80
+        "ctrl_ip": "mev.o-r.kr",
+        "ctrl_port": 20003
     }
 }
 
@@ -47,16 +49,47 @@ class VideoThread(QThread):
         self._cap = None
         self.is_connected = False
         self.active_protocol = "None"
+        self._latest_frame = None
+        self._lock = threading.Lock()
 
     def run(self):
+        # OpenCV FFmpeg 초저지연 연결 옵션 적용
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|analyzeduration;100000|probesize;100000|fflags;nobuffer|flags;low_delay"
+
+        # 백그라운드에서 최신 프레임을 지속적으로 읽어 버퍼를 즉시 비우는 스레드
+        def frame_grabber():
+            while self._run_flag:
+                if not self.is_connected:
+                    time.sleep(0.01)
+                    continue
+                
+                if self._cap is not None:
+                    ret, frame = self._cap.read()
+                    if ret and frame is not None:
+                        with self._lock:
+                            self._latest_frame = frame
+                    else:
+                        with self._lock:
+                            self._latest_frame = None
+                        self.is_connected = False
+                else:
+                    time.sleep(0.01)
+
+        # 그래버 스레드 시작
+        grabber_thread = threading.Thread(target=frame_grabber, daemon=True)
+        grabber_thread.start()
+
         while self._run_flag:
             if not self.is_connected:
                 # 1. SRT 연결 시도
                 self.status_signal.emit("SRT 연결 중...")
                 self._cap = cv2.VideoCapture(self.srt_url, cv2.CAP_FFMPEG)
                 if self._cap.isOpened():
+                    self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     ret, frame = self._cap.read()
                     if ret and frame is not None:
+                        with self._lock:
+                            self._latest_frame = frame
                         self.is_connected = True
                         self.active_protocol = "SRT"
                         self.status_signal.emit("SRT 연결 완료")
@@ -69,28 +102,43 @@ class VideoThread(QThread):
                     self.status_signal.emit("RTSP 연결 중...")
                     self._cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
                     if self._cap.isOpened():
+                        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                         ret, frame = self._cap.read()
                         if ret and frame is not None:
+                            with self._lock:
+                                self._latest_frame = frame
                             self.is_connected = True
                             self.active_protocol = "RTSP"
                             self.status_signal.emit("RTSP 연결 완료")
                             self.emit_frame(frame)
 
                 if not self.is_connected:
+                    if self._cap:
+                        self._cap.release()
+                        self._cap = None
                     self.status_signal.emit("연결 실패 (재시도 대기)")
                     self.msleep(3000)
                     continue
 
-            # 영상 캡처 루프
-            ret, frame = self._cap.read()
-            if ret and frame is not None:
+            # 영상 캡처 루프: 그래버가 채워둔 최신 프레임을 획득하여 GUI로 전송
+            frame = None
+            with self._lock:
+                if self._latest_frame is not None:
+                    frame = self._latest_frame.copy()
+                    self._latest_frame = None  # 중복 전송 방지
+
+            if frame is not None:
                 self.emit_frame(frame)
+                self.msleep(30)  # 약 33fps 제한으로 메인 GUI 스레드 과부하 방지
             else:
-                self.is_connected = False
-                if self._cap:
-                    self._cap.release()
-                self.status_signal.emit("스트림 끊김 (재연결 시도)")
-                self.msleep(1000)
+                if not self.is_connected:
+                    if self._cap:
+                        self._cap.release()
+                        self._cap = None
+                    self.status_signal.emit("스트림 끊김 (재연결 시도)")
+                    self.msleep(1000)
+                else:
+                    self.msleep(5)
 
         if self._cap:
             self._cap.release()
@@ -392,6 +440,46 @@ class NewControlGUI(QMainWindow):
 
     def update_status_msg(self, msg):
         self.update_status_display(extra=msg)
+        if "실패" in msg or "끊김" in msg or "대기" in msg:
+            self.show_offline_screen()
+
+    def show_offline_screen(self):
+        w = max(self.video_label.width(), 800)
+        h = max(self.video_label.height(), 480)
+        pixmap = QPixmap(w, h)
+        pixmap.fill(QColor(18, 20, 24))  # 어두운 다크 백그라운드
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # OFF 로고 및 텍스트 그리기
+        box_width = 160
+        box_height = 50
+        box_x = (w - box_width) // 2
+        box_y = (h - box_height) // 2 - 20
+        
+        painter.setBrush(QColor(231, 76, 60, 40)) # 반투명 빨강
+        painter.setPen(QPen(QColor(231, 76, 60), 2))
+        painter.drawRoundedRect(box_x, box_y, box_width, box_height, 8, 8)
+        
+        # OFF 텍스트
+        font = painter.font()
+        font.setFamily("Segoe UI")
+        font.setPointSize(16)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QColor(231, 76, 60))
+        painter.drawText(box_x, box_y, box_width, box_height, Qt.AlignmentFlag.AlignCenter, "CAMERA OFF")
+        
+        # 하단 상태 설명 텍스트
+        font.setPointSize(11)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.setPen(QColor(127, 140, 141))
+        painter.drawText(0, box_y + box_height + 15, w, 30, Qt.AlignmentFlag.AlignCenter, f"{self.current_status}")
+        
+        painter.end()
+        self.video_label.setPixmap(pixmap)
 
     def update_status_display(self, extra=None):
         if extra is not None:
