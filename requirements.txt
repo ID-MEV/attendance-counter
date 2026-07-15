@@ -1,4 +1,9 @@
+# 기존 의존성
 requests
 opencv-python
 ultralytics
 PyQt6
+
+# 웹 서버 추가 의존성
+fastapi
+uvicorn[standard]

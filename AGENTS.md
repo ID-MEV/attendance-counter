@@ -70,5 +70,4 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 6. 프로젝트 실행 정보
 
-- **메인 실행 파일:** `live_control.py` (이전의 `gui_main.py`를 대체함)
-- **참고:** `live_control.py`는 윈도우 환경에서 창 이동 시 튕김 문제나 버튼 작동 오류 등을 해결한 최신 메인 프로그램입니다. 모든 기능 추가 및 수정은 이 파일을 중심으로 진행합니다.
+- **메인 실행 파일:** `new_control.py` (이전의 `gui_main.py`를 대체함)

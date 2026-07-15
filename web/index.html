@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>성림 라이브 제어기</title>
+  <meta name="description" content="성림교회 예배당 카메라 PTZ 실시간 제어 시스템" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-root:    #0b0d11;
+      --bg-panel:   #13161e;
+      --bg-card:    #161b26;
+      --border:     #1e2a3a;
+      --border-hi:  #2a3d55;
+      --accent:     #00ffd2;
+      --accent2:    #3498db;
+      --text:       #dce4f0;
+      --text-dim:   #64748b;
+      --text-muted: #2e3d50;
+      --red:        #e74c3c;
+      --green:      #2ecc71;
+      --yellow:     #f5b041;
+      --purple:     #c39bd3;
+      --font-ui:    'Inter', 'Noto Sans KR', sans-serif;
+      --font-mono:  'JetBrains Mono', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-root);
+      color: var(--text);
+      font-family: var(--font-ui);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── 레이아웃 ── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 10px;
+      gap: 8px;
+    }
+
+    /* ── 상단 정보 바 ── */
+    #top-bar {
+      display: flex;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    #status-panel {
+      flex: 65;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-height: 46px;
+    }
+
+    #calc-panel {
+      flex: 35;
+      background: #090b0e;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-height: 46px;
+    }
+
+    #calc-display {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--accent);
+    }
+
+    /* ── 배지 ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-cam  { background: rgba(52,73,94,.6);   color: #fff; }
+    .badge-net  { background: rgba(52,152,219,.15); color: var(--accent2); }
+    .badge-net.internal { background: rgba(46,204,113,.15); color: var(--green); }
+    .badge-ok   { background: rgba(46,204,113,.15); color: var(--green); }
+    .badge-warn { background: rgba(245,176,65,.15);  color: var(--yellow); }
+    .badge-err  { background: rgba(231,76,60,.15);   color: var(--red); }
+    .badge-preset  { background: rgba(52,152,219,.2); color: var(--accent2); }
+    .badge-last    { background: rgba(26,188,156,.2); color: #1abc9c; }
+    .badge-speed   { background: rgba(155,89,182,.25); color: var(--purple); }
+    .badge-overlay { background: rgba(80,80,80,.2);   color: #555; }
+    .badge-dimmed  { color: var(--text-dim); padding: 3px 9px; font-size: 12px; }
+
+    /* ── 영상 영역 ── */
+    #video-container {
+      flex: 1;
+      position: relative;
+      background: #08090b;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+    }
+
+    #video-canvas {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+
+    /* 오버레이 캔버스 (십자/그리드) */
+    #overlay-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* 오프라인 화면 */
+    #offline-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: #08090b;
+    }
+    #offline-screen .cam-off-box {
+      border: 2px solid var(--red);
+      border-radius: 8px;
+      padding: 10px 32px;
+      background: rgba(231,76,60,.07);
+      color: var(--red);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+    #offline-screen .cam-off-msg {
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    /* ── 하단 바 ── */
+    #bottom-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    #network-btn {
+      background: #14171f;
+      color: var(--accent2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--font-ui);
+      cursor: pointer;
+      transition: background .2s, border-color .2s, color .2s;
+    }
+    #network-btn:hover { background: #1e2535; border-color: var(--accent2); }
+    #network-btn.internal { background: #1a3a27; color: var(--green); border-color: rgba(46,204,113,.5); }
+    #network-btn.internal:hover { background: #20472f; }
+
+    #hint-text {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+    #hint-text b { color: #3a5068; }
+
+    /* ── 단축키 모달 ── */
+    #help-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(8,10,14,.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    #help-modal.visible { display: flex; }
+
+    #help-panel {
+      background: #161920;
+      border: 1px solid #2a3a50;
+      border-radius: 14px;
+      padding: 32px;
+      width: 600px;
+      max-width: 95vw;
+      animation: fadeIn .15s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    #help-panel h2 {
+      color: var(--accent);
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #2a3a50;
+    }
+
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      padding: 5px 0;
+      gap: 0;
+    }
+    .shortcut-key {
+      width: 200px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #7fb3d3;
+      flex-shrink: 0;
+    }
+    .shortcut-sep { width: 24px; text-align: center; color: #2a3a50; flex-shrink: 0; }
+    .shortcut-desc { color: #a8b8c8; font-size: 13px; }
+
+    #help-close-hint {
+      margin-top: 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-style: italic;
+    }
+
+    /* ── 연결 표시기 ── */
+    #ws-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      margin-left: 4px;
+      transition: background .3s;
+      flex-shrink: 0;
+    }
+    #ws-indicator.connected { background: var(--green); box-shadow: 0 0 6px rgba(46,204,113,.5); }
+
+    /* 스크린샷 플래시 */
+    #flash {
+      position: fixed;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 200;
+      transition: opacity .1s;
+    }
+    #flash.on { opacity: .45; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ── 상단 상태 바 ── -->
+  <div id="top-bar">
+    <div id="status-panel">
+      <div id="ws-indicator" title="WebSocket 연결 상태"></div>
+      <span id="badge-cam"     class="badge badge-cam">🎥 로딩 중...</span>
+      <span id="badge-net"     class="badge badge-net">🌐 외부망</span>
+      <span id="badge-status"  class="badge badge-warn">대기 중</span>
+      <span id="badge-preset"  class="badge-dimmed">입력 대기</span>
+      <span id="badge-last"    class="badge badge-last">최근 프리셋: 없음</span>
+      <span id="badge-speed"   class="badge badge-speed" style="display:none"></span>
+      <span id="badge-overlay" class="badge badge-overlay" style="display:none">🔲 오버레이 OFF</span>
+    </div>
+    <div id="calc-panel">
+      <span id="calc-display" style="color:var(--text-muted);font-style:italic;font-size:12px;">🔢 텐키 수식 입력 대기</span>
+    </div>
+  </div>
+
+  <!-- ── 영상 영역 ── -->
+  <div id="video-container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+    <div id="offline-screen">
+      <div class="cam-off-box">CAMERA OFF</div>
+      <div class="cam-off-msg" id="offline-msg">연결 대기 중...</div>
+    </div>
+  </div>
+
+  <!-- ── 하단 바 ── -->
+  <div id="bottom-bar">
+    <button id="network-btn" onclick="toggleNetworkMode()">🌐 접속 모드: 외부 인터넷</button>
+    <span id="hint-text">💡 <b>Shift+?</b> 를 누르면 단축키 안내창이 열립니다</span>
+  </div>
+</div>
+
+<!-- ── 단축키 안내 모달 ── -->
+<div id="help-modal" onclick="closeHelp()">
+  <div id="help-panel" onclick="event.stopPropagation()">
+    <h2>⌨️ &nbsp;단축키 안내</h2>
+    <div id="shortcut-list"></div>
+    <div id="help-close-hint">아무 키나 누르거나 클릭하면 닫힙니다</div>
+  </div>
+</div>
+
+<!-- 스크린샷 플래시 -->
+<div id="flash"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  상태 변수
+// ════════════════════════════════════════════════════════════
+const state = {
+  cameraId:      3,
+  networkMode:   'external',
+  presetBuffer:  '',
+  lastPreset:    '없음',
+  currentStatus: '대기 중',
+  calcBuffer:    '',
+  calcResult:    '',
+  panTiltSpeed:  10,
+  zoomSpeed:     3,
+  speedMode:     null,   // null | 'pan_tilt' | 'zoom'
+  showOverlay:   true,
+  wsConnected:   false,
+};
+
+// ════════════════════════════════════════════════════════════
+//  WebSocket + 영상 렌더링
+// ════════════════════════════════════════════════════════════
+let ws = null;
+const videoCanvas   = document.getElementById('video-canvas');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const vCtx          = videoCanvas.getContext('2d');
+const oCtx          = overlayCanvas.getContext('2d');
+const offlineScreen = document.getElementById('offline-screen');
+const offlineMsg    = document.getElementById('offline-msg');
+let hasFrame        = false;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/stream`);
+
+  ws.onopen = () => {
+    setWsStatus(true);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'frame') {
+      renderFrame(msg.data);
+    } else if (msg.type === 'status') {
+      state.currentStatus = msg.status;
+      updateStatusBadge(msg.status);
+    }
+  };
+
+  ws.onclose = () => {
+    setWsStatus(false);
+    setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+function setWsStatus(connected) {
+  state.wsConnected = connected;
+  const ind = document.getElementById('ws-indicator');
+  if (connected) ind.classList.add('connected');
+  else ind.classList.remove('connected');
+}
+
+function renderFrame(b64) {
+  const img = new Image();
+  img.onload = () => {
+    // 비디오 캔버스 크기를 컨테이너에 맞게 조정
+    const container = document.getElementById('video-container');
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const scale = Math.min(cw / img.width, ch / img.height);
+    const dw = Math.round(img.width * scale);
+    const dh = Math.round(img.height * scale);
+
+    if (videoCanvas.width !== dw || videoCanvas.height !== dh) {
+      videoCanvas.width  = dw;
+      videoCanvas.height = dh;
+      overlayCanvas.width  = cw;
+      overlayCanvas.height = ch;
+      overlayCanvas.style.width  = cw + 'px';
+      overlayCanvas.style.height = ch + 'px';
+    }
+
+    vCtx.drawImage(img, 0, 0, dw, dh);
+    hasFrame = true;
+    offlineScreen.style.display = 'none';
+    drawOverlay();
+  };
+  img.src = 'data:image/jpeg;base64,' + b64;
+}
+
+function drawOverlay() {
+  oCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  if (!state.showOverlay) return;
+
+  // 영상이 표시된 영역 구하기
+  const container = document.getElementById('video-container');
+  const cw = container.clientWidth;
+  const ch = container.clientHeight;
+  const vw = videoCanvas.width;
+  const vh = videoCanvas.height;
+  const ox = (cw - vw) / 2;
+  const oy = (ch - vh) / 2;
+
+  // 9분할 그리드 (흰색 반투명)
+  oCtx.strokeStyle = 'rgba(255,255,255,0.1)';
+  oCtx.lineWidth = 1;
+  [1/3, 2/3].forEach(f => {
+    oCtx.beginPath(); oCtx.moveTo(ox + vw*f, oy);     oCtx.lineTo(ox + vw*f, oy+vh); oCtx.stroke();
+    oCtx.beginPath(); oCtx.moveTo(ox, oy + vh*f);     oCtx.lineTo(ox+vw, oy + vh*f); oCtx.stroke();
+  });
+
+  // 십자 (청록색)
+  const cx = ox + vw/2, cy = oy + vh/2;
+  const arm = 14, gap = 4;
+  oCtx.strokeStyle = 'rgba(0,255,210,0.85)';
+  oCtx.lineWidth = 1.5;
+  oCtx.beginPath(); oCtx.moveTo(cx-arm, cy); oCtx.lineTo(cx-gap, cy); oCtx.stroke();
+  oCtx.beginPath(); oCtx.moveTo(cx+gap, cy); oCtx.lineTo(cx+arm, cy); oCtx.stroke();
+  oCtx.beginPath(); oCtx.moveTo(cx, cy-arm); oCtx.lineTo(cx, cy-gap); oCtx.stroke();
+  oCtx.beginPath(); oCtx.moveTo(cx, cy+gap); oCtx.lineTo(cx, cy+arm); oCtx.stroke();
+  oCtx.beginPath(); oCtx.arc(cx, cy, 2.5, 0, Math.PI*2); oCtx.stroke();
+}
+
+// 컨테이너 리사이즈 대응
+new ResizeObserver(() => {
+  const container = document.getElementById('video-container');
+  overlayCanvas.width  = container.clientWidth;
+  overlayCanvas.height = container.clientHeight;
+  drawOverlay();
+}).observe(document.getElementById('video-container'));
+
+// ════════════════════════════════════════════════════════════
+//  UI 업데이트
+// ════════════════════════════════════════════════════════════
+const CAMERA_NAMES = {
+  1: '예배당 좌측 (1번)',
+  2: '예배당 중앙 (2번)',
+  3: '예배당 우측 (3번)',
+};
+
+function updateStatusBadge(status) {
+  const el = document.getElementById('badge-status');
+  el.textContent = status || '대기 중';
+  el.className = 'badge';
+  if (/실패|끊김|에러|오류/.test(status)) {
+    el.classList.add('badge-err');
+    showOfflineScreen(status);
+  } else if (/완료|성공/.test(status)) {
+    el.classList.add('badge-ok');
+  } else {
+    el.classList.add('badge-warn');
+  }
+}
+
+function showOfflineScreen(msg) {
+  if (!hasFrame) {
+    offlineScreen.style.display = 'flex';
+    offlineMsg.textContent = msg || '';
+  }
+}
+
+function updateAllBadges() {
+  // 카메라 배지
+  document.getElementById('badge-cam').textContent = '🎥 ' + (CAMERA_NAMES[state.cameraId] || '카메라');
+
+  // 네트워크 배지
+  const netBadge = document.getElementById('badge-net');
+  if (state.networkMode === 'internal') {
+    netBadge.textContent = '🌐 내부망 (LAN)';
+    netBadge.className = 'badge badge-net internal';
+  } else {
+    netBadge.textContent = '🌐 외부망';
+    netBadge.className = 'badge badge-net';
+  }
+
+  // 프리셋 배지
+  const presetBadge = document.getElementById('badge-preset');
+  if (state.presetBuffer) {
+    presetBadge.textContent = '입력 중: ' + state.presetBuffer;
+    presetBadge.className = 'badge badge-preset';
+  } else {
+    presetBadge.textContent = '입력 대기';
+    presetBadge.className = 'badge-dimmed';
+  }
+
+  // 최근 프리셋 배지
+  document.getElementById('badge-last').textContent = '최근 프리셋: ' + state.lastPreset;
+
+  // 속도 배지
+  const speedBadge = document.getElementById('badge-speed');
+  if (state.speedMode === 'pan_tilt') {
+    speedBadge.style.display = '';
+    speedBadge.textContent = `🎚️ 팬틸트 속도: ${state.panTiltSpeed}/24  (+/- 조절, Z로 종료)`;
+    speedBadge.className = 'badge badge-speed';
+  } else if (state.speedMode === 'zoom') {
+    speedBadge.style.display = '';
+    speedBadge.textContent = `🔍 줌 속도: ${state.zoomSpeed}/9  (+/- 조절, X로 종료)`;
+    speedBadge.className = 'badge';
+    speedBadge.style.background = 'rgba(52,152,219,.25)';
+    speedBadge.style.color = '#7fb3d3';
+  } else {
+    speedBadge.style.display = 'none';
+  }
+
+  // 오버레이 배지
+  const ovBadge = document.getElementById('badge-overlay');
+  ovBadge.style.display = state.showOverlay ? 'none' : '';
+
+  // 계산기 표시
+  updateCalcDisplay();
+}
+
+function updateCalcDisplay() {
+  const el = document.getElementById('calc-display');
+  if (!state.calcBuffer) {
+    el.innerHTML = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">🔢 텐키 수식 입력 대기</span>`;
+    return;
+  }
+  if (state.calcBuffer.includes('=')) {
+    const [expr, val] = state.calcBuffer.split('=');
+    el.innerHTML = `<span style="color:#64748b;font-size:12px;">${expr} =</span> <span style="color:var(--accent);font-size:15px;font-weight:700;">${val}</span>`;
+  } else if (state.calcBuffer === 'Error') {
+    el.innerHTML = `<span style="color:var(--red);">Error</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--text);font-size:14px;">${state.calcBuffer}</span>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  API 호출
+// ════════════════════════════════════════════════════════════
+async function apiSwitchCamera(id) {
+  await fetch(`/api/switch_camera/${id}`, { method: 'POST' });
+  state.cameraId = id;
+  hasFrame = false;
+  offlineScreen.style.display = 'flex';
+  offlineMsg.textContent = '카메라 전환 중...';
+  updateAllBadges();
+}
+
+async function apiNetworkMode(mode) {
+  await fetch(`/api/network_mode/${mode}`, { method: 'POST' });
+  state.networkMode = mode;
+  hasFrame = false;
+  offlineScreen.style.display = 'flex';
+  offlineMsg.textContent = '네트워크 모드 전환 중...';
+  updateAllBadges();
+}
+
+async function apiPTZ(command, speed1 = 10, speed2 = 10) {
+  await fetch(`/api/ptz/${state.cameraId}/${command}?speed1=${speed1}&speed2=${speed2}`, { method: 'POST' });
+}
+
+// ════════════════════════════════════════════════════════════
+//  네트워크 모드 토글
+// ════════════════════════════════════════════════════════════
+async function toggleNetworkMode() {
+  const newMode = state.networkMode === 'external' ? 'internal' : 'external';
+  await apiNetworkMode(newMode);
+
+  const btn = document.getElementById('network-btn');
+  if (newMode === 'internal') {
+    btn.textContent = '🌐 접속 모드: 내부망 (LAN)';
+    btn.classList.add('internal');
+  } else {
+    btn.textContent = '🌐 접속 모드: 외부 인터넷';
+    btn.classList.remove('internal');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  계산기 평가
+// ════════════════════════════════════════════════════════════
+function evaluateCalculator() {
+  let expr = state.calcBuffer;
+  if (!expr || expr.includes('=') || expr === 'Error') return;
+
+  // 허용 문자만
+  expr = expr.replace(/[^0-9+\-*/.]/g, '');
+  // 끝의 연산자 제거
+  expr = expr.replace(/[+\-*/.]+$/, '');
+  if (!expr) return;
+
+  try {
+    // eslint-disable-next-line no-eval
+    let result = Function('"use strict"; return (' + expr + ')')();
+    if (typeof result === 'number') {
+      if (Number.isInteger(result)) result = result;
+      else result = Math.round(result * 10000) / 10000;
+    }
+    state.calcResult = String(result);
+    state.calcBuffer = `${expr}=${state.calcResult}`;
+  } catch {
+    state.calcBuffer = 'Error';
+    state.calcResult = '';
+  }
+  updateCalcDisplay();
+}
+
+// ════════════════════════════════════════════════════════════
+//  프리셋 이동
+// ════════════════════════════════════════════════════════════
+async function moveToPreset() {
+  if (!state.presetBuffer) return;
+  const num = parseInt(state.presetBuffer, 10);
+  state.lastPreset = String(num);
+  state.presetBuffer = '';
+  updateAllBadges();
+  await apiPTZ('preset', num);
+}
+
+// ════════════════════════════════════════════════════════════
+//  스크린샷
+// ════════════════════════════════════════════════════════════
+function saveScreenshot() {
+  if (!hasFrame) {
+    state.currentStatus = '스크린샷 실패: 영상 없음';
+    updateStatusBadge(state.currentStatus);
+    return;
+  }
+
+  // 플래시
+  const flash = document.getElementById('flash');
+  flash.classList.add('on');
+  setTimeout(() => flash.classList.remove('on'), 200);
+
+  const link = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  link.download = `screenshot_cam${state.cameraId}_${ts}.png`;
+  link.href = videoCanvas.toDataURL('image/png');
+  link.click();
+
+  state.currentStatus = `스크린샷 저장: ${link.download}`;
+  updateStatusBadge(state.currentStatus);
+}
+
+// ════════════════════════════════════════════════════════════
+//  키보드 입력
+// ════════════════════════════════════════════════════════════
+// 현재 누르고 있는 이동 키 추적 (중복 stop 방지)
+const pressedMoveKeys = new Set();
+
+document.addEventListener('keydown', async (e) => {
+  // 모달 열려있으면 닫기
+  if (document.getElementById('help-modal').classList.contains('visible')) {
+    closeHelp();
+    return;
+  }
+
+  const key  = e.code;   // 'KeyW', 'Space', 'Numpad1', ...
+  const char = e.key;    // 실제 문자
+
+  // Auto Repeat 허용 조건
+  const isSpeedAdj = (char === '+' || char === '=' || char === '-') && state.speedMode;
+  const isCalcBS   = key === 'Backspace' && state.calcBuffer;
+  if (e.repeat && !isSpeedAdj && !isCalcBS) return;
+
+  // F1/F2/F3: 카메라 전환
+  if (key === 'F1') { e.preventDefault(); await apiSwitchCamera(1); return; }
+  if (key === 'F2') { e.preventDefault(); await apiSwitchCamera(2); return; }
+  if (key === 'F3') { e.preventDefault(); await apiSwitchCamera(3); return; }
+
+  // Shift+? : 단축키 안내
+  if (char === '?') { e.preventDefault(); openHelp(); return; }
+
+  // Z: 팬틸트 속도 모드 토글
+  if (key === 'KeyZ' || char === 'ㅋ') {
+    state.speedMode = state.speedMode === 'pan_tilt' ? null : 'pan_tilt';
+    updateAllBadges(); return;
+  }
+
+  // X: 줌 속도 모드 토글
+  if (key === 'KeyX' || char === 'ㅌ') {
+    state.speedMode = state.speedMode === 'zoom' ? null : 'zoom';
+    updateAllBadges(); return;
+  }
+
+  // H: 오버레이 토글
+  if (key === 'KeyH' || char === 'ㅗ') {
+    state.showOverlay = !state.showOverlay;
+    drawOverlay();
+    updateAllBadges(); return;
+  }
+
+  // C: 스크린샷
+  if (key === 'KeyC' || char === 'ㅊ') {
+    saveScreenshot(); return;
+  }
+
+  // 속도 조정 모드: +/-
+  if (state.speedMode === 'pan_tilt') {
+    if (char === '+' || char === '=') {
+      state.panTiltSpeed = Math.min(24, state.panTiltSpeed + 1);
+      updateAllBadges(); return;
+    }
+    if (char === '-') {
+      state.panTiltSpeed = Math.max(1, state.panTiltSpeed - 1);
+      updateAllBadges(); return;
+    }
+  }
+  if (state.speedMode === 'zoom') {
+    if (char === '+' || char === '=') {
+      state.zoomSpeed = Math.min(9, state.zoomSpeed + 1);
+      updateAllBadges(); return;
+    }
+    if (char === '-') {
+      state.zoomSpeed = Math.max(1, state.zoomSpeed - 1);
+      updateAllBadges(); return;
+    }
+  }
+
+  // WASD: 이동
+  const moveMap = {
+    'KeyW': 'up', 'ㅈ': 'up',
+    'KeyS': 'down', 'ㄴ': 'down',
+    'KeyA': 'left', 'ㅁ': 'left',
+    'KeyD': 'right', 'ㅇ': 'right',
+    'KeyQ': 'zoomin', 'ㅂ': 'zoomin',
+    'KeyE': 'zoomout', 'ㄷ': 'zoomout',
+  };
+  const moveDir = moveMap[key] || moveMap[char];
+  if (moveDir && !pressedMoveKeys.has(moveDir)) {
+    e.preventDefault();
+    pressedMoveKeys.add(moveDir);
+    const isZoom = moveDir === 'zoomin' || moveDir === 'zoomout';
+    await apiPTZ(moveDir, isZoom ? state.zoomSpeed : state.panTiltSpeed, state.panTiltSpeed);
+    return;
+  }
+
+  // 텐키 입력 (계산기)
+  if (e.location === KeyboardEvent.DOM_KEY_LOCATION_NUMPAD) {
+    // 텐키 Enter
+    if (key === 'NumpadEnter') { e.preventDefault(); evaluateCalculator(); return; }
+    // 텐키 숫자
+    if (/^Numpad\d$/.test(key)) {
+      const digit = key.slice(-1);
+      if (state.calcBuffer.includes('=') || state.calcBuffer === 'Error') state.calcBuffer = '';
+      state.calcBuffer += digit;
+      updateCalcDisplay(); return;
+    }
+    // 텐키 연산자
+    const numpadOp = { 'NumpadAdd':'+', 'NumpadSubtract':'-', 'NumpadMultiply':'*', 'NumpadDivide':'/' };
+    if (numpadOp[key]) {
+      const op = numpadOp[key];
+      if (state.calcBuffer.includes('=') || state.calcBuffer === 'Error') {
+        state.calcBuffer = state.calcResult + op;
+      } else {
+        state.calcBuffer += op;
+      }
+      updateCalcDisplay(); return;
+    }
+    // 텐키 소수점
+    if (key === 'NumpadDecimal') {
+      if (state.calcBuffer.includes('=') || state.calcBuffer === 'Error') state.calcBuffer = '';
+      state.calcBuffer += '.';
+      updateCalcDisplay(); return;
+    }
+  }
+
+  // 일반 숫자 키 (프리셋 버퍼)
+  if (/^Digit\d$/.test(key) && e.location !== KeyboardEvent.DOM_KEY_LOCATION_NUMPAD) {
+    const digit = key.slice(-1);
+    state.presetBuffer += digit;
+    updateAllBadges(); return;
+  }
+
+  // Space: 프리셋 이동
+  if (key === 'Space') { e.preventDefault(); await moveToPreset(); return; }
+
+  // Backspace: 계산기 삭제
+  if (key === 'Backspace') {
+    if (state.calcBuffer) {
+      if (state.calcBuffer === 'Error') {
+        state.calcBuffer = ''; state.calcResult = '';
+      } else if (state.calcBuffer.includes('=')) {
+        state.calcBuffer = state.calcBuffer.split('=')[0];
+        state.calcResult = '';
+      } else {
+        state.calcBuffer = state.calcBuffer.slice(0, -1);
+      }
+      updateCalcDisplay();
+    }
+    return;
+  }
+
+  // ESC: 프리셋 버퍼 초기화
+  if (key === 'Escape') {
+    state.presetBuffer = '';
+    updateAllBadges(); return;
+  }
+});
+
+document.addEventListener('keyup', async (e) => {
+  const key  = e.code;
+  const char = e.key;
+  if (e.repeat) return;
+
+  const stopMap = {
+    'KeyW': 'move', 'KeyS': 'move', 'KeyA': 'move', 'KeyD': 'move',
+    'ㅈ': 'move', 'ㄴ': 'move', 'ㅁ': 'move', 'ㅇ': 'move',
+    'KeyQ': 'zoom', 'KeyE': 'zoom', 'ㅂ': 'zoom', 'ㄷ': 'zoom',
+  };
+  const stopCmd = stopMap[key] || stopMap[char];
+  if (stopCmd) {
+    // 방향 매핑으로 pressedMoveKeys에서 제거
+    const dirMap = {
+      'KeyW':'up','KeyS':'down','KeyA':'left','KeyD':'right',
+      'KeyQ':'zoomin','KeyE':'zoomout',
+      'ㅈ':'up','ㄴ':'down','ㅁ':'left','ㅇ':'right','ㅂ':'zoomin','ㄷ':'zoomout',
+    };
+    const dir = dirMap[key] || dirMap[char];
+    if (dir) pressedMoveKeys.delete(dir);
+
+    const cmd = stopCmd === 'zoom' ? 'zoomstop' : 'stop';
+    await apiPTZ(cmd);
+  }
+});
+
+// ════════════════════════════════════════════════════════════
+//  단축키 모달
+// ════════════════════════════════════════════════════════════
+const SHORTCUTS = [
+  ['F1 / F2 / F3',        '카메라 1번 / 2번 / 3번 전환'],
+  ['W / A / S / D',        '카메라 상 / 좌 / 하 / 우 이동'],
+  ['Q / E',                '줌 인 / 줌 아웃'],
+  ['Z',                    '팬틸트 속도 조정 모드 토글'],
+  ['X',                    '줌 속도 조정 모드 토글'],
+  ['+ / −',                '속도 증가 / 감소  (Z: 1~24 팬틸트 / X: 1~9 줌)'],
+  ['숫자 + Space',         '프리셋 번호 입력 후 이동'],
+  ['ESC',                  '프리셋 입력 버퍼 초기화'],
+  ['Backspace',            '계산기 수식 한 글자 삭제'],
+  ['텐키 숫자 / 연산자',   '계산기 수식 입력'],
+  ['텐키 Enter',           '계산기 수식 계산'],
+  ['H',                    '십자 / 9분할 오버레이 토글  (기본: ON)'],
+  ['C',                    '현재 프레임 스크린샷 저장'],
+  ['Shift + ?',            '이 단축키 안내창 열기'],
+];
+
+(function buildShortcutList() {
+  const list = document.getElementById('shortcut-list');
+  SHORTCUTS.forEach(([key, desc]) => {
+    const row  = document.createElement('div'); row.className = 'shortcut-row';
+    const k    = document.createElement('div'); k.className   = 'shortcut-key';   k.textContent = key;
+    const sep  = document.createElement('div'); sep.className = 'shortcut-sep';   sep.textContent = '—';
+    const d    = document.createElement('div'); d.className   = 'shortcut-desc';  d.textContent = desc;
+    row.append(k, sep, d);
+    list.appendChild(row);
+  });
+})();
+
+function openHelp() {
+  document.getElementById('help-modal').classList.add('visible');
+}
+function closeHelp() {
+  document.getElementById('help-modal').classList.remove('visible');
+}
+
+// ════════════════════════════════════════════════════════════
+//  초기화
+// ════════════════════════════════════════════════════════════
+async function init() {
+  try {
+    const resp = await fetch('/api/cameras');
+    const data = await resp.json();
+    state.cameraId    = data.current_camera_id;
+    state.networkMode = data.network_mode;
+    state.currentStatus = data.status;
+    updateAllBadges();
+    updateStatusBadge(data.status);
+  } catch (err) {
+    console.warn('초기화 API 호출 실패:', err);
+  }
+
+  connectWS();
+  updateAllBadges();
+}
+
+init();
+</script>
+</body>
+</html>
